@@ -1,0 +1,9 @@
+---
+ignore:
+    - .git
+    - runon
+    - a/**
+    - a/**
+
+on change:
+    - bash -c "go build"
