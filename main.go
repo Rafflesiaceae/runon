@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -20,9 +21,9 @@ type Config struct {
 }
 
 // @TODO cleanup on panic
-// @TODO put each project into its own dir instead of just into ~/.runon
 // @TODO CLI / flags/args for passing -S - also check if socket exists and offer an option accordingly if it doesnt
 // @TODO CLI / init writes down a bare .runon.yml with commented out stuff
+// @TODO pass args that copy produced files back again
 
 var master *exec.Cmd
 
@@ -172,6 +173,17 @@ func main() {
 	hostArg := os.Args[1]
 	cmdArgs := os.Args[2:]
 
+	// create unique hash out of current working dir
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	projectPathHash := fmt.Sprintf("%04X", sha256.Sum256([]byte(cwd)))[:16] // @XXX breaking any security guarantee of sha256
+	remoteProjectPath := fmt.Sprintf("~/.runon/%s", projectPathHash)
+
+	log.Debugf("remote project path: %s", remoteProjectPath)
+
 	// parsePotential config
 	config, err := parseYml("./.runon.yml")
 	if err != nil && !os.IsNotExist(err) { // in case we found a file and an error occured during parsing
@@ -228,8 +240,8 @@ func main() {
 	),
 		[]string{
 			"-e", fmt.Sprintf("ssh -o ControlPath=%s", socketPath), // use ssh
-			".",                                 // source
-			fmt.Sprintf("%s:~/.runon", hostArg), // target // @TODO put each project in its own dir
+			".", // source
+			fmt.Sprintf("%s:%s", hostArg, remoteProjectPath), // target
 		}...,
 	)...)
 	if err != nil {
@@ -247,7 +259,7 @@ func main() {
 		// run commands on-change
 		for _, v := range onChangeList {
 			log.Infof("running onChange command: \"%v\"\n", v)
-			err := sshCommand(socketPath, hostArg, true, "cd ~/.runon", "&&", v)
+			err := sshCommand(socketPath, hostArg, true, fmt.Sprintf("cd %s", remoteProjectPath), "&&", v)
 			if err != nil {
 				panic(err)
 			}
@@ -257,10 +269,10 @@ func main() {
 	// run passed command
 	if len(cmdArgs) > 0 {
 		log.Infof("running command: \"%v\"\n", cmdArgs)
-		err = sshCommand(socketPath, hostArg, false, append([]string{"cd ~/.runon", "&&"}, cmdArgs...)...)
+		err = sshCommand(socketPath, hostArg, false, append([]string{fmt.Sprintf("cd %s", remoteProjectPath), "&&"}, cmdArgs...)...)
 	} else {
 		log.Infoln("starting interactive terminal")
-		err = sshCommand(socketPath, hostArg, false, "cd ~/.runon")
+		err = sshCommand(socketPath, hostArg, false, fmt.Sprintf("cd %s", remoteProjectPath))
 	}
 	if err != nil {
 		log.Error(err)
