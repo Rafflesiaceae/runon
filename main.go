@@ -191,7 +191,7 @@ func main() {
 	}
 
 	// make temp file
-	socketPath, _, err := CaptureExec("mktemp", "-u", "/tmp/runon-ssh-socket.XXXXXX")
+	socketPath, _, err := CheckExec("mktemp", "-u", "/tmp/runon-ssh-socket.XXXXXX")
 	if err != nil {
 		panic(err)
 	}
@@ -218,34 +218,36 @@ func main() {
 		}
 	}()
 
-	// rsync
-	ignoreList := []string{}
-	if config != nil && config.Ignore != nil {
-		ignoreList = config.Ignore
-	}
+	var rsyncStdout string
+	{ // rsync
+		ignoreList := []string{}
+		if config != nil && config.Ignore != nil {
+			ignoreList = config.Ignore
+		}
 
-	// assemble filterList from ignoreList
-	filterList := []string{}
-	for _, v := range ignoreList {
-		filterList = append(filterList, fmt.Sprintf("--exclude=%s", v))
-	}
+		// assemble filterList from ignoreList
+		filterList := []string{}
+		for _, v := range ignoreList {
+			filterList = append(filterList, fmt.Sprintf("--exclude=%s", v))
+		}
 
-	// call rsync
-	rsyncStdout, _, err := CaptureExec("rsync", append(append(
-		[]string{
-			"-ar",
-			"-i", // print status to stdout
-		},
-		filterList...,
-	),
-		[]string{
-			"-e", fmt.Sprintf("ssh -o ControlPath=%s", socketPath), // use ssh
-			".", // source
-			fmt.Sprintf("%s:%s", hostArg, remoteProjectPath), // target
-		}...,
-	)...)
-	if err != nil {
-		panic(err)
+		// call rsync
+		rsyncStdout, _, err = CheckExec("rsync", append(append(
+			[]string{
+				"-ar",
+				"-i", // print status to stdout
+			},
+			filterList...,
+		),
+			[]string{
+				"-e", fmt.Sprintf("ssh -o ControlPath=%s", socketPath), // use ssh
+				".", // source
+				fmt.Sprintf("%s:%s", hostArg, remoteProjectPath), // target
+			}...,
+		)...)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	// possibly run the on-changed commands on host
