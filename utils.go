@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -69,6 +70,13 @@ func CheckExec(Argcmd string, args ...string) (stdout string, stderr string, err
 	}
 
 	return cout, cerr, nil
+}
+
+func FileExists(path string) bool {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return false
+	}
+	return true
 }
 
 // SSH error return codes:

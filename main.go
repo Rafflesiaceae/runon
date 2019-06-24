@@ -6,7 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"strings"
+	"path/filepath"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -198,22 +198,24 @@ func main() {
 		panic(err)
 	}
 
-	// make temp file
-	socketPath, _, err := CheckExec("mktemp", "-u", "/tmp/runon-ssh-socket.XXXXXX")
-	if err != nil {
-		panic(err)
-	}
-
-	socketPath = strings.TrimSpace(socketPath)
-
-	_ = forkSSHMaster(socketPath, hostArg)
-
-	defer func() { // clean up the socket
-		_, err := os.Stat(socketPath)
+	socketPath := fmt.Sprintf("/tmp/sshctls/%s/%s", os.Getenv("USER"), hostArg)
+	if !FileExists(socketPath) { // spawn ssh master if necessary
+		err = os.MkdirAll(filepath.Dir(socketPath), os.ModePerm)
 		if err != nil {
-			os.Remove(socketPath)
+			panic(err)
 		}
-	}()
+
+		_ = forkSSHMaster(socketPath, hostArg)
+
+		defer func() { // clean up the socket
+			if FileExists(socketPath) {
+				err = os.Remove(socketPath)
+				if err != nil {
+					log.Error(err)
+				}
+			}
+		}()
+	}
 
 	defer func() { // clean up master
 		if master != nil {
