@@ -27,6 +27,7 @@ type Config struct {
 // @TODO run daemon in named-tmux instance - possibly restart it if run more then once
 // @TODO when on-changed commands fail, re-run them next time even if no files changed?
 // @TODO add clean command in case we accidentally transmitted build artifacts we later ignored // command for cleaning up all paths that are now ignored
+// @TODO info-level logging gives timings for profiling (when rsync is finished etc)
 
 var master *exec.Cmd
 
