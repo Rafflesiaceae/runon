@@ -41,7 +41,7 @@ func forkSSHMaster(socketPath string, host string) (errorChan chan error) {
 			"ssh",
 			"-M", // master
 			"-S", socketPath,
-			"-N", // don't execute a remoe command, just block
+			"-N", // don't execute a remote command, just block
 			host,
 		)
 
