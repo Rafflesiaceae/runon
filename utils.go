@@ -78,11 +78,3 @@ func FileExists(path string) bool {
 	}
 	return true
 }
-
-// SSH error return codes:
-// 127 - running a cmd that the host doesnt know
-// 130 - ctrl-c
-// 255 - failed to connect
-const ExitCodeSSHUnknownCommand = 127
-const ExitCodeSSHCtrlC = 130
-const ExitCodeSSHAuthenticationFailure = 255

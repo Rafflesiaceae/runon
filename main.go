@@ -146,35 +146,7 @@ func sshCommand(socketPath string, hostArg string, stdoutToStderr bool, remotePr
 	err := cmd.Run()
 
 	if err != nil {
-		exitCode := 0
-		if exitError, ok := err.(*exec.ExitError); ok {
-			exitCode = exitError.ExitCode()
-		} else {
-			panic(err)
-		}
-
-		if exitCode == ExitCodeSSHUnknownCommand {
-			log.Errorf("host does not know command: \"%v\"\n", args)
-			log.Errorln("dropping down to shell...")
-
-			cmd := exec.Command("ssh", "-S", socketPath, hostArg)
-			cmd.Stdin = os.Stdin
-			if stdoutToStderr {
-				cmd.Stdout = os.Stderr
-			} else {
-				cmd.Stdout = os.Stdout
-
-			}
-			cmd.Stderr = os.Stderr
-			err := cmd.Run()
-
-			if err != nil {
-				return err
-			} else {
-				return nil
-			}
-		}
-
+		log.Errorf("remote command failed: \"%v\"\n", remoteCmd)
 		return err
 	}
 
