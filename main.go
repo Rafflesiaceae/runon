@@ -118,20 +118,25 @@ func parseYml(configPath string) (config *Config, errRet error) {
 }
 
 func sshCommand(socketPath string, hostArg string, stdoutToStderr bool, remoteProjectPath string, remoteCmd string) error {
-	cmd := exec.Command("ssh",
-		append(
-			[]string{
-				"-S",
-				socketPath,
-				hostArg,
-				"--",
-			},
+	cmdArgs := []string{
+		"-S",
+		socketPath,
+		hostArg,
+	}
+
+	// interactive terminal?
+	if remoteCmd != "" {
+		cmdArgs = append(cmdArgs,
+			"--",
 			fmt.Sprintf(
 				"%s %s", remoteShellCmd, shell_quote.ShBackslashQuote(
 					fmt.Sprintf("cd %s && %s", remoteProjectPath, remoteCmd),
 				),
 			),
-		)...)
+		)
+	}
+
+	cmd := exec.Command("ssh", cmdArgs...)
 
 	log.Debugf("%v", cmd.Args)
 
