@@ -7,10 +7,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
+
+	"runon/shell_quote"
 )
 
 const helpMsg = `usage: <host> cmd ...`
@@ -31,6 +34,10 @@ type Config struct {
 // @TODO support multiple runon files you can pick from, autocomplete according to a pattern, e.g.: `.runon.windows.yaml`
 
 var master *exec.Cmd
+
+var (
+	remoteShellCmd = "bash -lc"
+)
 
 func forkSSHMaster(socketPath string, host string) (errorChan chan error) {
 	errorChan = make(chan error, 1)
@@ -110,16 +117,23 @@ func parseYml(configPath string) (config *Config, errRet error) {
 	return
 }
 
-func sshCommand(socketPath string, hostArg string, stdoutToStderr bool, args ...string) error {
+func sshCommand(socketPath string, hostArg string, stdoutToStderr bool, remoteProjectPath string, remoteCmd string) error {
 	cmd := exec.Command("ssh",
 		append(
 			[]string{
 				"-S",
 				socketPath,
 				hostArg,
+				"--",
 			},
-			args...,
+			fmt.Sprintf(
+				"%s %s", remoteShellCmd, shell_quote.ShBackslashQuote(
+					fmt.Sprintf("cd %s && %s", remoteProjectPath, remoteCmd),
+				),
+			),
 		)...)
+
+	log.Debugf("%v", cmd.Args)
 
 	cmd.Stdin = os.Stdin
 	if stdoutToStderr {
@@ -273,7 +287,8 @@ func main() {
 		// run commands on-change
 		for _, v := range onChangeList {
 			log.Infof("running onChange command: \"%v\"\n", v)
-			err := sshCommand(socketPath, hostArg, true, fmt.Sprintf("cd %s", remoteProjectPath), "&&", v)
+
+			err := sshCommand(socketPath, hostArg, true, remoteProjectPath, v)
 			if err != nil {
 				panic(err)
 			}
@@ -283,10 +298,10 @@ func main() {
 	// run passed command
 	if len(cmdArgs) > 0 {
 		log.Infof("running command: \"%v\"\n", cmdArgs)
-		err = sshCommand(socketPath, hostArg, false, append([]string{fmt.Sprintf("cd %s", remoteProjectPath), "&&"}, cmdArgs...)...)
+		err = sshCommand(socketPath, hostArg, false, remoteProjectPath, strings.Join(cmdArgs, " "))
 	} else {
 		log.Infoln("starting interactive terminal")
-		err = sshCommand(socketPath, hostArg, false, fmt.Sprintf("cd %s", remoteProjectPath))
+		err = sshCommand(socketPath, hostArg, false, remoteProjectPath, "") // drop down to shell
 	}
 	if err != nil {
 		log.Error(err)
