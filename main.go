@@ -124,8 +124,12 @@ func sshCommand(socketPath string, hostArg string, stdoutToStderr bool, remotePr
 		hostArg,
 	}
 
-	// interactive terminal?
-	if remoteCmd != "" {
+	isInteractiveTerminal := false
+	if remoteCmd == "" {
+		isInteractiveTerminal = true
+	}
+
+	if !isInteractiveTerminal {
 		cmdArgs = append(cmdArgs,
 			"--",
 			fmt.Sprintf(
@@ -150,7 +154,7 @@ func sshCommand(socketPath string, hostArg string, stdoutToStderr bool, remotePr
 	cmd.Stderr = os.Stderr
 	err := cmd.Run()
 
-	if err != nil {
+	if !isInteractiveTerminal && err != nil {
 		log.Errorf("remote command failed: \"%v\"\n", remoteCmd)
 		return err
 	}
@@ -278,7 +282,7 @@ func main() {
 		err = sshCommand(socketPath, hostArg, false, remoteProjectPath, strings.Join(cmdArgs, " "))
 	} else {
 		log.Infoln("starting interactive terminal")
-		err = sshCommand(socketPath, hostArg, false, remoteProjectPath, "") // drop down to shell
+		sshCommand(socketPath, hostArg, false, remoteProjectPath, "") // drop down to shell
 	}
 	if err != nil {
 		log.Error(err)
