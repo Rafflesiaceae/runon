@@ -201,7 +201,7 @@ func Run(host string, cmdArgs []string) {
 
 			err := sshCommand(socketPath, host, true, remoteProjectPath, v)
 			if err != nil {
-				panic(err)
+				log.Fatal(err)
 			}
 		}
 	}
