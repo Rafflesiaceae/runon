@@ -10,8 +10,9 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// Responsible for managing an SSH Control-Master that we require for not having to type the password of the host in everytime
+// Responsible for managing an SSH Control-Master that we require so we don't have to type the password of the host in everytime
 
+// AssembleDefaultSocketPath returns default socket-path for a given host
 func AssembleDefaultSocketPath(host string) string {
 	return fmt.Sprintf("/tmp/sshctls/%s/%s", os.Getenv("USER"), host)
 }
@@ -24,19 +25,30 @@ type ControlMaster struct {
 	Cmd *exec.Cmd
 }
 
-// NewMaster returns a constructed ControlMaster instance
-func NewMaster(socketPath string, host string) *ControlMaster {
-	result := &ControlMaster{
+// NewControlMaster returns a constructed ControlMaster instance
+func NewControlMaster(socketPath string, host string) *ControlMaster {
+	var err error
+
+	master := &ControlMaster{
 		SocketPath: socketPath,
 		host:       host,
 	}
 
 	// @TODO: check for stale socket-file without running instance
-	if !result.Setup() {
+	if FileExists(master.SocketPath) {
 		return nil
 	}
 
-	return result
+	{ // no file exists at socketPath, continue creating the master
+		err = os.MkdirAll(filepath.Dir(master.SocketPath), os.ModePerm)
+		if err != nil {
+			panic(err)
+		}
+
+		_ = master.forkSSH(master.SocketPath, master.host)
+	}
+
+	return master
 }
 
 func (master *ControlMaster) forkSSH(socketPath string, host string) (errorChan chan error) {
@@ -54,12 +66,14 @@ func (master *ControlMaster) forkSSH(socketPath string, host string) (errorChan 
 	master.Cmd.Stdout = os.Stderr
 	master.Cmd.Stderr = os.Stderr
 
+	log.Debugf("ControlMaster.start: %v", master.Cmd.Args)
 	err := master.Cmd.Start()
 	if err != nil {
 		log.Error(err)
 	}
 
 	// @XXX poll until socket is created >.<
+	// @TODO is errorChan still necessary?
 	for {
 		select {
 		case err := <-errorChan:
@@ -81,25 +95,8 @@ End:
 	return
 }
 
-// Setup returns false if master was already running, the requires cleanupSocket
-func (master *ControlMaster) Setup() bool {
-	var err error
-
-	if !FileExists(master.SocketPath) { // spawn ssh master if necessary
-		err = os.MkdirAll(filepath.Dir(master.SocketPath), os.ModePerm)
-		if err != nil {
-			panic(err)
-		}
-
-		_ = master.forkSSH(master.SocketPath, master.host)
-
-		return true
-	}
-
-	return false
-}
-
-func (master *ControlMaster) cleanup() {
+// Cleanup cleans up stale resources of the ControlMaster
+func (master *ControlMaster) Cleanup() {
 	var err error
 
 	if master != nil && master.Cmd != nil {
