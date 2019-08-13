@@ -134,14 +134,28 @@ func RunMasterOnly(host string) {
 func Run(host string, cmdArgs []string) {
 	var err error
 
-	// create unique hash out of current working dir
-	cwd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
+	var (
+		remoteProjectPath  string
+		projectPathHashVal string
+	)
 
-	projectPathHash := fmt.Sprintf("%04X", sha256.Sum256([]byte(cwd)))[:16] // @XXX breaking any security guarantee of sha256
-	remoteProjectPath := fmt.Sprintf("~/.runon/%s", projectPathHash)
+	{ // assemble projectPathHashVal; remoteProjectPath
+		cwd, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+
+		hostname, err := os.Hostname()
+		if err != nil {
+			panic(err)
+		}
+
+		projectPathHashVal = hostname + ":" + cwd
+		log.Debugf("project path hashval: %s", projectPathHashVal)
+
+		projectPathHash := fmt.Sprintf("%04X", sha256.Sum256([]byte(projectPathHashVal)))[:16] // @XXX breaking any security guarantee of sha256
+		remoteProjectPath = fmt.Sprintf("~/.runon/%s", projectPathHash)
+	}
 
 	log.Debugf("remote project path: %s", remoteProjectPath)
 
@@ -169,7 +183,7 @@ func Run(host string, cmdArgs []string) {
 		}
 
 		// call rsync
-		rsyncStdout, _, err = CheckExec("rsync", append(append(
+		rsyncArgs := append(append(
 			[]string{
 				"-ar",
 				"-i", // print status to stdout
@@ -181,10 +195,25 @@ func Run(host string, cmdArgs []string) {
 				".", // source
 				fmt.Sprintf("%s:%s", host, remoteProjectPath), // target
 			}...,
-		)...)
+		)
+
+		log.Debugf("rsync arguments: %v", rsyncArgs)
+
+		rsyncStdout, _, err = CheckExec("rsync", rsyncArgs...)
+		log.Debugf("rsync output: \"%v\"", rsyncStdout)
 		if err != nil {
 			panic(err)
 		}
+
+		if strings.HasPrefix(rsyncStdout, "cd+++++++++ ./") { // remoteProjectPath was created for the first time
+			log.Info("first time creating remote-project")
+			err := sshCommand(socketPath, host, true, remoteProjectPath, fmt.Sprintf("echo \"$(pwd)\t%s\" >> ../projects", projectPathHashVal))
+			if err != nil {
+				log.Fatal(err)
+			}
+
+		}
+
 	}
 
 	// possibly run the on-changed commands on host
