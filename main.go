@@ -30,6 +30,7 @@ type Config struct {
 // @TODO add clean command in case we accidentally transmitted build artifacts we later ignored // command for cleaning up all paths that are now ignored
 // @TODO info-level logging gives timings for profiling (when rsync is finished etc)
 // @TODO support multiple runon files you can pick from, autocomplete according to a pattern, e.g.: `.runon.windows.yaml`
+// @TODO CLI / flag to reset/delete the remote project directory
 
 var master *exec.Cmd
 
