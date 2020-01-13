@@ -6,9 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
-	"time"
 
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -37,59 +35,13 @@ type Config struct {
 
 // @TODO info-level logging gives timings for profiling (when rsync is finished etc)
 // @TODO support multiple runon files you can pick from, autocomplete according to a pattern, e.g.: `.runon.windows.yaml`
+// @TODO CLI / flag to reset/delete the remote project directory
 
 var master *exec.Cmd
 
 var (
 	remoteShellCmd = "bash -lc"
 )
-
-func forkSSHMaster(socketPath string, host string) (errorChan chan error) {
-	errorChan = make(chan error, 1)
-
-	go func() {
-		// start master ssh command
-		master = exec.Command(
-			"ssh",
-			"-M", // master
-			"-S", socketPath,
-			"-N", // don't execute a remote command, just block
-			host,
-		)
-
-		master.Stdin = os.Stdin
-		master.Stdout = os.Stderr
-		master.Stderr = os.Stderr
-
-		err := master.Run()
-		if err != nil {
-			log.Errorln("failed trying to start the master ssh-daemon")
-			errorChan <- err
-		}
-
-	}()
-
-	// @XXX poll until socket is created >.<
-	for {
-		select {
-		case err := <-errorChan:
-			panic(err)
-		default:
-			_, err := os.Stat(socketPath)
-
-			if err == nil { // file exists
-				goto End
-			} else if os.IsNotExist(err) { // file does not exist
-				time.Sleep(40 * time.Millisecond)
-			} else { // unknown error
-				panic(err)
-			}
-		}
-	}
-
-End:
-	return
-}
 
 func init() {
 	log.SetOutput(os.Stderr)
@@ -122,11 +74,11 @@ func parseYml(configPath string) (config *Config, errRet error) {
 	return
 }
 
-func sshCommand(socketPath string, hostArg string, stdoutToStderr bool, remoteProjectPath string, remoteCmd string) error {
+func sshCommand(socketPath string, host string, stdoutToStderr bool, remoteProjectPath string, remoteCmd string) error {
 	cmdArgs := []string{
 		"-S",
 		socketPath,
-		hostArg,
+		host,
 	}
 
 	isInteractiveTerminal := false
@@ -167,30 +119,49 @@ func sshCommand(socketPath string, hostArg string, stdoutToStderr bool, remotePr
 	return nil
 }
 
-func cleanup() {
+func RunMasterOnly(host string) {
+	socketPath := AssembleDefaultSocketPath(host)
+	master := NewControlMaster(socketPath, host)
+	if master != nil {
+		defer master.Cleanup()
+		log.Infof("control-master starting up, listening on: \"%s\"\n", master.SocketPath)
+
+		// wait for the master process to close
+		if err := master.Cmd.Wait(); err != nil {
+			log.Error(err)
+			os.Exit(255)
+		}
+		os.Exit(0)
+	} else {
+		log.Errorf("master-control already listening on \"%s\"", socketPath)
+	}
 }
 
-func main() {
-
+func Run(host string, cmdArgs []string) {
 	var err error
 
-	if len(os.Args) < 2 {
-		println(helpMsg)
-		os.Exit(-1)
+	var (
+		remoteProjectPath  string
+		projectPathHashVal string
+	)
+
+	{ // assemble projectPathHashVal; remoteProjectPath
+		cwd, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+
+		hostname, err := os.Hostname()
+		if err != nil {
+			panic(err)
+		}
+
+		projectPathHashVal = hostname + ":" + cwd
+		log.Debugf("project path hashval: %s", projectPathHashVal)
+
+		projectPathHash := fmt.Sprintf("%04X", sha256.Sum256([]byte(projectPathHashVal)))[:16] // @XXX breaking any security guarantee of sha256
+		remoteProjectPath = fmt.Sprintf("~/.runon/%s", projectPathHash)
 	}
-
-	// split args
-	hostArg := os.Args[1]
-	cmdArgs := os.Args[2:]
-
-	// create unique hash out of current working dir
-	cwd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-
-	projectPathHash := fmt.Sprintf("%04X", sha256.Sum256([]byte(cwd)))[:16] // @XXX breaking any security guarantee of sha256
-	remoteProjectPath := fmt.Sprintf("~/.runon/%s", projectPathHash)
 
 	log.Debugf("remote project path: %s", remoteProjectPath)
 
@@ -200,35 +171,9 @@ func main() {
 		panic(err)
 	}
 
-	socketPath := fmt.Sprintf("/tmp/sshctls/%s/%s", os.Getenv("USER"), hostArg)
-	if !FileExists(socketPath) { // spawn ssh master if necessary
-		err = os.MkdirAll(filepath.Dir(socketPath), os.ModePerm)
-		if err != nil {
-			panic(err)
-		}
-
-		_ = forkSSHMaster(socketPath, hostArg)
-
-		defer func() { // clean up the socket
-			if FileExists(socketPath) {
-				err = os.Remove(socketPath)
-				if err != nil {
-					log.Error(err)
-				}
-			}
-		}()
-	}
-
-	defer func() { // clean up master
-		if master != nil {
-			if master.Process != nil {
-				err := master.Process.Kill()
-				if err != nil {
-					log.Error(err)
-				}
-			}
-		}
-	}()
+	socketPath := AssembleDefaultSocketPath(host)
+	master := NewControlMaster(socketPath, host)
+	defer master.Cleanup()
 
 	var rsyncStdout string
 	{ // rsync
@@ -244,7 +189,7 @@ func main() {
 		}
 
 		// call rsync
-		rsyncStdout, _, err = CheckExec("rsync", append(append(
+		rsyncArgs := append(append(
 			[]string{
 				"-ar",
 				"-i", // print status to stdout
@@ -254,12 +199,27 @@ func main() {
 			[]string{
 				"-e", fmt.Sprintf("ssh -o ControlPath=%s", socketPath), // use ssh
 				".", // source
-				fmt.Sprintf("%s:%s", hostArg, remoteProjectPath), // target
+				fmt.Sprintf("%s:%s", host, remoteProjectPath), // target
 			}...,
-		)...)
+		)
+
+		log.Debugf("rsync arguments: %v", rsyncArgs)
+
+		rsyncStdout, _, err = CheckExec("rsync", rsyncArgs...)
+		log.Debugf("rsync output: \"%v\"", rsyncStdout)
 		if err != nil {
 			panic(err)
 		}
+
+		if strings.HasPrefix(rsyncStdout, "cd+++++++++ ./") { // remoteProjectPath was created for the first time
+			log.Info("first time creating remote-project")
+			err := sshCommand(socketPath, host, true, remoteProjectPath, fmt.Sprintf("echo \"$(pwd)\t%s\" >> ../projects", projectPathHashVal))
+			if err != nil {
+				log.Fatal(err)
+			}
+
+		}
+
 	}
 
 	// possibly run the on-changed commands on host
@@ -274,9 +234,9 @@ func main() {
 		for _, v := range onChangeList {
 			log.Infof("running onChange command: \"%v\"\n", v)
 
-			err := sshCommand(socketPath, hostArg, true, remoteProjectPath, v)
+			err := sshCommand(socketPath, host, true, remoteProjectPath, v)
 			if err != nil {
-				panic(err)
+				log.Fatal(err)
 			}
 		}
 	}
@@ -284,10 +244,10 @@ func main() {
 	// run passed command
 	if len(cmdArgs) > 0 {
 		log.Infof("running command: \"%v\"\n", cmdArgs)
-		err = sshCommand(socketPath, hostArg, false, remoteProjectPath, strings.Join(cmdArgs, " "))
+		err = sshCommand(socketPath, host, false, remoteProjectPath, strings.Join(cmdArgs, " "))
 	} else {
 		log.Infoln("starting interactive terminal")
-		sshCommand(socketPath, hostArg, false, remoteProjectPath, "") // drop down to shell
+		sshCommand(socketPath, host, false, remoteProjectPath, "") // drop down to shell
 	}
 	if err != nil {
 		log.Error(err)

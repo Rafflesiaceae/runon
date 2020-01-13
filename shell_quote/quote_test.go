@@ -1,15 +1,27 @@
 package shell_quote
 
 import (
+	"bytes"
 	"fmt"
-	sh "shell_quote/sh"
+	"os/exec"
 	"testing"
 )
 
 func assertEqualToBashPrintfQ(t *testing.T, testStr string) {
-	theirs, theirsErr, err := sh.CaptureExec("bash", "-lc", fmt.Sprintf("printf %%q '%s'", testStr))
-	if err != 0 {
-		t.Fatal(theirsErr)
+	var theirs string
+
+	{
+		cmd := exec.Command("bash", "-lc", fmt.Sprintf("printf %%q '%s'", testStr))
+
+		var stdoutBuf bytes.Buffer
+		cmd.Stdout = &stdoutBuf
+
+		err := cmd.Run()
+		if err != nil {
+			t.Error(err)
+		}
+
+		theirs = string(stdoutBuf.Bytes())
 	}
 
 	ours := ShBackslashQuote(testStr)
