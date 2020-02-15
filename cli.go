@@ -66,10 +66,11 @@ var initCommand = &cobra.Command{
 		err = ioutil.WriteFile(runonPath, []byte(`---
 ignore:
     - .git
-    - node_modules/**
+    - .svn
+    - node_modules
+    - build
 
-on change:
-    - ./build`), 0644)
+# on change:`), 0644)
 		if err != nil {
 			log.Fatal(err)
 		}
