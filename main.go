@@ -17,6 +17,7 @@ import (
 
 const helpMsg = `usage: <host> cmd ...`
 
+// Config stores per-project hooks and configuration
 type Config struct {
 	Ignore   []string `yaml:"ignore,omitempty"`
 	OnChange []string `yaml:"on change,omitempty"`
@@ -99,6 +100,7 @@ func sshCommand(socketPath string, host string, stdoutToStderr bool, remoteProje
 	}
 
 	cmd := exec.Command("ssh", cmdArgs...)
+	// @TODO run this command in a shell this probably solves the $TERM issues
 
 	log.Debugf("%v", cmd.Args)
 
@@ -120,6 +122,7 @@ func sshCommand(socketPath string, host string, stdoutToStderr bool, remoteProje
 	return nil
 }
 
+// RunMasterOnly Runs a master daemon for a given host without running commands
 func RunMasterOnly(host string) {
 	socketPath := AssembleDefaultSocketPath(host)
 	master := NewControlMaster(socketPath, host)
