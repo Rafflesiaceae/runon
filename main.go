@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -137,31 +138,31 @@ func RunMasterOnly(host string) {
 	}
 }
 
+func assemblePaths() (remoteProjectPath string, projectPathHashVal string) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		panic(err)
+	}
+
+	projectPathHashVal = hostname + ":" + cwd
+	log.Debugf("project path hashval: %s", projectPathHashVal)
+
+	projectPathHash := fmt.Sprintf("%04X", sha256.Sum256([]byte(projectPathHashVal)))[:16] // @NOTE breaking any security guarantee of sha256
+	remoteProjectPath = fmt.Sprintf("~/.runon/%s", projectPathHash)
+
+	return remoteProjectPath, projectPathHashVal
+}
+
+// Run executes a list of commands on a given host
 func Run(host string, cmdArgs []string) {
 	var err error
 
-	var (
-		remoteProjectPath  string
-		projectPathHashVal string
-	)
-
-	{ // assemble projectPathHashVal; remoteProjectPath
-		cwd, err := os.Getwd()
-		if err != nil {
-			panic(err)
-		}
-
-		hostname, err := os.Hostname()
-		if err != nil {
-			panic(err)
-		}
-
-		projectPathHashVal = hostname + ":" + cwd
-		log.Debugf("project path hashval: %s", projectPathHashVal)
-
-		projectPathHash := fmt.Sprintf("%04X", sha256.Sum256([]byte(projectPathHashVal)))[:16] // @XXX breaking any security guarantee of sha256
-		remoteProjectPath = fmt.Sprintf("~/.runon/%s", projectPathHash)
-	}
+	remoteProjectPath, projectPathHashVal := assemblePaths()
 
 	log.Debugf("remote project path: %s", remoteProjectPath)
 
@@ -251,5 +252,53 @@ func Run(host string, cmdArgs []string) {
 	}
 	if err != nil {
 		log.Error(err)
+	}
+}
+
+// InitConfig initializes a bare config in the cwd
+func InitConfig() {
+	var err error
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	runonPath := path.Join(cwd, ".runon.yml")
+	if _, err = os.Stat(runonPath); err == nil {
+		log.Errorf(".runon.yml file already exists: (%s)", runonPath)
+		return
+	}
+
+	log.Infof("creating .runon.yml file (%s)", runonPath)
+	err = ioutil.WriteFile(runonPath, []byte(`---
+ignore:
+    - .git
+    - .svn
+    - node_modules
+    - build
+
+# on change:`), 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+}
+
+// Clean cleans the current project that's stored on a given host
+func Clean(host string) {
+	remoteProjectPath, projectPathHashVal := assemblePaths()
+	if projectPathHashVal == "" {
+		//
+	}
+
+	socketPath := AssembleDefaultSocketPath(host)
+	master := NewControlMaster(socketPath, host)
+	defer master.Cleanup()
+
+	log.Infof("cleaning project (%s)", remoteProjectPath)
+	err := sshCommand(socketPath, host, true, remoteProjectPath, fmt.Sprintf("cd .. && rm -rf %s", remoteProjectPath))
+	if err != nil {
+		log.Fatal(err)
 	}
 }
