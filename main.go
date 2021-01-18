@@ -6,10 +6,11 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
-	"path"
+	pathlib "path"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 
 	"runon/shell_quote"
@@ -162,10 +163,12 @@ func assemblePaths() (remoteProjectPath string, projectPathHashVal string) {
 }
 
 // Run executes a list of commands on a given host
-func Run(host string, cmdArgs []string) {
+func Run(cmd *cobra.Command, host string, cmdArgs []string) {
 	var err error
 
 	remoteProjectPath, projectPathHashVal := assemblePaths()
+
+	copyBack := cmd.Flag("copy-back").Value.String()
 
 	log.Debugf("remote project path: %s", remoteProjectPath)
 
@@ -179,6 +182,7 @@ func Run(host string, cmdArgs []string) {
 	master := NewControlMaster(socketPath, host)
 	defer master.Cleanup()
 
+	target := fmt.Sprintf("%s:%s", host, remoteProjectPath)
 	var rsyncStdout string
 	{ // rsync
 		ignoreList := []string{}
@@ -202,8 +206,8 @@ func Run(host string, cmdArgs []string) {
 		),
 			[]string{
 				"-e", fmt.Sprintf("ssh -o ControlPath=%s", socketPath), // use ssh
-				".", // source
-				fmt.Sprintf("%s:%s", host, remoteProjectPath), // target
+				".",    // source
+				target, // target
 			}...,
 		)
 
@@ -256,6 +260,40 @@ func Run(host string, cmdArgs []string) {
 	if err != nil {
 		log.Error(err)
 	}
+
+	// possibly copy files back to local
+	if copyBack != "" {
+		paths := strings.Split(copyBack, ";")
+		absPaths := []string{}
+		for _, path := range paths {
+			absPaths = append(absPaths, pathlib.Join(target, path))
+		}
+
+		{ // rsync
+			// call rsync
+			rsyncArgs := append(append(
+				[]string{
+					"-ar",
+					"-i",                                                   // print status to stdout
+					"-e", fmt.Sprintf("ssh -o ControlPath=%s", socketPath), // use ssh
+				},
+				absPaths...,
+			),
+				[]string{
+					pathlib.Join(".", "copyback-"+host) + "/", // source
+				}...,
+			)
+
+			log.Debugf("rsync arguments: %v", rsyncArgs)
+
+			rsyncStdout, _, err = CheckExec("rsync", rsyncArgs...)
+			log.Debugf("rsync output: \"%v\"", rsyncStdout)
+			if err != nil {
+				panic(err)
+			}
+
+		}
+	}
 }
 
 // InitConfig initializes a bare config in the cwd
@@ -267,7 +305,7 @@ func InitConfig() {
 		log.Fatal(err)
 	}
 
-	runonPath := path.Join(cwd, ".runon.yml")
+	runonPath := pathlib.Join(cwd, ".runon.yml")
 	if _, err = os.Stat(runonPath); err == nil {
 		log.Errorf(".runon.yml file already exists: (%s)", runonPath)
 		return

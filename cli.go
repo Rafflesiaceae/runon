@@ -22,7 +22,7 @@ var rootCmd = &cobra.Command{
 		host := args[0]
 		runArgs := args[1:]
 
-		Run(host, runArgs)
+		Run(cmd, host, runArgs)
 	},
 }
 
@@ -72,6 +72,7 @@ func init() {
 	rootCmd.AddCommand(cleanCommand)
 	rootCmd.AddCommand(initCommand)
 
+	rootCmd.Flags().StringP("copy-back", "b", "", "paths to copy back from the host after the commands ran through")
 	rootCmd.PersistentFlags().BoolVar(&flagDebug, "debug", false, "Enable debug output")
 }
 
