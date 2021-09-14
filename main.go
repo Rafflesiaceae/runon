@@ -20,8 +20,9 @@ const helpMsg = `usage: <host> cmd ...`
 
 // Config stores per-project hooks and configuration
 type Config struct {
-	Ignore   []string `yaml:"ignore,omitempty"`
-	OnChange []string `yaml:"on change,omitempty"`
+	ProjectHash string   `yaml:"project-hash,omitempty"`
+	Ignore      []string `yaml:"ignore,omitempty"`
+	OnChange    []string `yaml:"on change,omitempty"`
 }
 
 // @TODO pass args that copy produced files back again
@@ -142,21 +143,27 @@ func RunMasterOnly(host string) {
 	}
 }
 
-func assemblePaths() (remoteProjectPath string, projectPathHashVal string) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		panic(err)
+func assemblePaths(config *Config) (remoteProjectPath string, projectPathHashVal string) {
+	var projectPathHash string
+	if config.ProjectHash == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			panic(err)
+		}
+
+		hostname, err := os.Hostname()
+		if err != nil {
+			panic(err)
+		}
+
+		projectPathHashVal = hostname + ":" + cwd
+		log.Debugf("project path hashval: %s", projectPathHashVal)
+
+		projectPathHash = fmt.Sprintf("%04X", sha256.Sum256([]byte(projectPathHashVal)))[:16] // @NOTE breaking any security guarantee of sha256
+	} else {
+		projectPathHash = config.ProjectHash
 	}
 
-	hostname, err := os.Hostname()
-	if err != nil {
-		panic(err)
-	}
-
-	projectPathHashVal = hostname + ":" + cwd
-	log.Debugf("project path hashval: %s", projectPathHashVal)
-
-	projectPathHash := fmt.Sprintf("%04X", sha256.Sum256([]byte(projectPathHashVal)))[:16] // @NOTE breaking any security guarantee of sha256
 	remoteProjectPath = fmt.Sprintf("~/.runon/%s", projectPathHash)
 
 	return remoteProjectPath, projectPathHashVal
@@ -166,17 +173,16 @@ func assemblePaths() (remoteProjectPath string, projectPathHashVal string) {
 func Run(cmd *cobra.Command, host string, cmdArgs []string) {
 	var err error
 
-	remoteProjectPath, projectPathHashVal := assemblePaths()
-
 	copyBack := cmd.Flag("copy-back").Value.String()
-
-	log.Debugf("remote project path: %s", remoteProjectPath)
 
 	// parsePotential config
 	config, err := parseYml("./.runon.yml")
 	if err != nil && !os.IsNotExist(err) { // in case we found a file and an error occured during parsing
 		panic(err)
 	}
+
+	remoteProjectPath, projectPathHashVal := assemblePaths(config)
+	log.Debugf("remote project path: %s", remoteProjectPath)
 
 	socketPath := AssembleDefaultSocketPath(host)
 	master := NewControlMaster(socketPath, host)
@@ -328,7 +334,15 @@ ignore:
 
 // Clean cleans the current project that's stored on a given host
 func Clean(host string) {
-	remoteProjectPath, projectPathHashVal := assemblePaths()
+	var err error
+
+	// parsePotential config
+	config, err := parseYml("./.runon.yml")
+	if err != nil && !os.IsNotExist(err) { // in case we found a file and an error occured during parsing
+		panic(err)
+	}
+
+	remoteProjectPath, projectPathHashVal := assemblePaths(config)
 	if projectPathHashVal == "" {
 		//
 	}
@@ -338,7 +352,7 @@ func Clean(host string) {
 	defer master.Cleanup()
 
 	log.Infof("cleaning project (%s)", remoteProjectPath)
-	err := sshCommand(socketPath, host, true, remoteProjectPath, fmt.Sprintf("cd .. && rm -rf %s", remoteProjectPath))
+	err = sshCommand(socketPath, host, true, remoteProjectPath, fmt.Sprintf("cd .. && rm -rf %s", remoteProjectPath))
 	if err != nil {
 		log.Fatal(err)
 	}
