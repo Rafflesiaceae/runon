@@ -45,43 +45,6 @@ var ( // bash-5.0
 	}
 )
 
-// case 'q':		/* print with shell quoting */
-//   {
-// char *p, *xp;
-// int r;
-
-// r = 0;
-// p = getstr ();
-// if (p && *p == 0)	/* XXX - getstr never returns null */
-//   xp = savestring ("''");
-// else if (ansic_shouldquote (p))
-//   xp = ansic_quote (p, 0, (int *)0);
-// else
-//   xp = sh_backslash_quote (p, 0, 3);
-// if (xp)
-//   {
-//     /* Use printstr to get fieldwidth and precision right. */
-//     r = printstr (start, xp, strlen (xp), fieldwidth, precision);
-//     if (r < 0)
-//       {
-// 	sh_wrerror ();
-// 	clearerr (stdout);
-//       }
-//     free (xp);
-//   }
-
-// if (r < 0)
-//   PRETURN (EXECUTION_FAILURE);
-// break;
-//   }
-
-// AnsicShouldQuote returns true if passed string needs to be quoted
-func AnsicShouldQuote(in string) bool {
-	// @TODO
-	return true
-}
-
-// ShBackslashQuote
 func ShBackslashQuote(in string) string {
 	result := ""
 	backslash_table := bashBstab
@@ -91,7 +54,6 @@ func ShBackslashQuote(in string) string {
 	}
 
 	for _, c := range in {
-		// println(c)
 		if c >= 0 && c <= 127 && backslash_table[c] == 1 {
 			result += "\\"
 			result += string(c)
@@ -100,20 +62,7 @@ func ShBackslashQuote(in string) string {
 
 		result += string(c)
 	}
+
 	// @TODO
 	return result
-}
-
-func Quote(in string) string {
-	if in == "" {
-		return "''"
-	}
-
-	if AnsicShouldQuote(in) {
-
-	} else {
-
-	}
-
-	return ""
 }

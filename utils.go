@@ -27,8 +27,8 @@ func (e ExecError) Error() string {
 	)
 }
 
-// CaptureExec captures stdout/stderr and returns it back to you, error in case there was an error (doesn't
-// return errorcode)
+// CaptureExec captures stdout/stderr and returns it back to you, error in case
+// there was an error (doesn't return errorcode)
 func CaptureExec(cmdArg string, args ...string) (stdout string, stderr string, exitCode int) {
 	var err error
 
@@ -41,21 +41,15 @@ func CaptureExec(cmdArg string, args ...string) (stdout string, stderr string, e
 	err = cmd.Run()
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
-			// return exitError.ExitCode()
 			return string(stdoutBuf.Bytes()), string(stderrBuf.Bytes()), exitError.ExitCode()
 		}
 	}
-
-	// if err != nil {
-	// 	return string(stdoutBuf.Bytes()), string(stderrBuf.Bytes()), fmt.Errorf("cmd failed \"%s [%s]\"", cmd, args)
-	// }
 
 	outStr, errStr := string(stdoutBuf.Bytes()), string(stderrBuf.Bytes())
 
 	return outStr, errStr, 0
 }
 
-// CheckExec
 func CheckExec(Argcmd string, args ...string) (stdout string, stderr string, err error) {
 	cout, cerr, exitCode := CaptureExec(Argcmd, args...)
 	if exitCode != 0 {

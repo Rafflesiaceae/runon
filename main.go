@@ -25,21 +25,13 @@ type Config struct {
 	OnChange    []string `yaml:"on change,omitempty"`
 }
 
-// @TODO pass args that copy produced files back again
-
 // @TODO CLI / flags/args for passing -S - also check if socket exists and offer an option accordingly if it doesnt
 
-// @TODO run daemon in named-tmux instance - possibly restart it if run more then once
 // @TODO when on-changed commands fail, re-run them next time even if no files changed?
-
 // @TODO cleanup on panic
-
-// @TODO CLI / flag to reset/delete the remote project directory
-// @TODO add clean command in case we accidentally transmitted build artifacts we later ignored // command for cleaning up all paths that are now ignored
 
 // @TODO info-level logging gives timings for profiling (when rsync is finished etc)
 // @TODO support multiple runon files you can pick from, autocomplete according to a pattern, e.g.: `.runon.windows.yaml`
-// @TODO CLI / flag to reset/delete the remote project directory
 
 var master *exec.Cmd
 
