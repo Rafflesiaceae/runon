@@ -182,7 +182,8 @@ func Run(cmd *cobra.Command, host string, cmdArgs []string) {
 
 	target := fmt.Sprintf("%s:%s", host, remoteProjectPath)
 	var rsyncStdout string
-	{ // rsync
+	var rsync func(retry int)
+	rsync = func(retry int) { // rsync
 		ignoreList := []string{}
 		if config != nil && config.Ignore != nil {
 			ignoreList = config.Ignore
@@ -211,10 +212,26 @@ func Run(cmd *cobra.Command, host string, cmdArgs []string) {
 
 		log.Debugf("rsync arguments: %v", rsyncArgs)
 
-		rsyncStdout, _, err = CheckExec("rsync", rsyncArgs...)
+		var errCheck *ExecError
+		rsyncStdout, _, errCheck = CheckExec("rsync", rsyncArgs...)
 		log.Debugf("rsync output: \"%v\"", rsyncStdout)
-		if err != nil {
-			panic(err)
+		if errCheck != nil {
+			// check if it's an error we can handle
+			if retry < 1 &&
+				strings.Contains(errCheck.stderr, "rsync:") &&
+				strings.Contains(errCheck.stderr, "mkdir") &&
+				strings.Contains(errCheck.stderr, "No such file or directory") {
+
+				err = sshCommand(socketPath, host, true, "~", "mkdir -p \"$PWD/.runon\"")
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				rsync(1)
+				return
+			} else {
+				panic(errCheck)
+			}
 		}
 
 		if strings.HasPrefix(rsyncStdout, "cd+++++++++ ./") { // remoteProjectPath was created for the first time
@@ -227,6 +244,7 @@ func Run(cmd *cobra.Command, host string, cmdArgs []string) {
 		}
 
 	}
+	rsync(0)
 
 	// possibly run the on-changed commands on host
 	if len(rsyncStdout) > 0 { // some files were changed

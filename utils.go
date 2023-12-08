@@ -50,10 +50,10 @@ func CaptureExec(cmdArg string, args ...string) (stdout string, stderr string, e
 	return outStr, errStr, 0
 }
 
-func CheckExec(Argcmd string, args ...string) (stdout string, stderr string, err error) {
+func CheckExec(Argcmd string, args ...string) (stdout string, stderr string, err *ExecError) {
 	cout, cerr, exitCode := CaptureExec(Argcmd, args...)
 	if exitCode != 0 {
-		return cout, cerr, ExecError{
+		return cout, cerr, &ExecError{
 			cmd:  Argcmd,
 			args: args,
 
